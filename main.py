@@ -89,8 +89,6 @@ async def reset_user(user_id):
         del user_data[user_id]
 
 def clean_contact_name(name):
-    # Removes trailing numbers to avoid "Flame 1 1"
-    # Example: "Flame 1" becomes "Flame"
     return re.sub(r'\s*\d+$', '', name).strip()
 
 # --- KEYBOARDS ---
@@ -386,13 +384,13 @@ async def text_handler(c, m):
         os.remove(fname)
         await reset_user(uid)
 
-# --- PROCESSORS ---
+# --- PROCESSORS (Fixed Syntax) ---
 
 async def process_t2v(c, m, uid, custom):
     proc_msg = await m.reply("⚙️ **Processing with Sequential Names...**")
     try:
         files = user_data[uid]['files']
-        c_name_base = user_data[uid]['c_name'] # Already cleaned
+        c_name_base = user_data[uid]['c_name']
         
         for i, path in enumerate(files):
             out_name = f"{user_data[uid].get('custom_name')} {i+1}.vcf" if custom else f"{user_data[uid]['original_names'][i]}.vcf"
@@ -400,7 +398,6 @@ async def process_t2v(c, m, uid, custom):
             with open(path, 'r', encoding='utf-8', errors='ignore') as f: lines = f.readlines()
             data = ""
             
-            # Counter for Sequence: Flame 1, Flame 2...
             counter = 1
             for num in lines:
                 num = num.strip()
@@ -410,10 +407,16 @@ async def process_t2v(c, m, uid, custom):
             
             with open(out_name, 'w', encoding='utf-8') as f: f.write(data)
             await m.reply_document(out_name)
-            if i==0: 
-                try: await proc_msg.delete()
-                except: pass
-            os.remove(out_name); os.remove(path)
+            
+            if i == 0:
+                try:
+                    await proc_msg.delete()
+                except:
+                    pass
+            
+            os.remove(out_name)
+            os.remove(path)
+            
         await m.reply("✅ **All Files Done.**")
     except Exception as e: await m.reply(f"❌ Error: {e}")
     await reset_user(uid)
@@ -421,7 +424,7 @@ async def process_t2v(c, m, uid, custom):
 async def process_ren_ctc(c, m, uid, custom):
     proc_msg = await m.reply("⚙️ **Renaming Contacts (Sequential)...**")
     files = user_data[uid]['files']
-    new_c_name_base = user_data[uid]['c_name'] # Already cleaned
+    new_c_name_base = user_data[uid]['c_name']
     
     try:
         for i, path in enumerate(files):
@@ -432,7 +435,6 @@ async def process_ren_ctc(c, m, uid, custom):
             with open(path, 'r', encoding='utf-8', errors='ignore') as f:
                 for line in f:
                     if line.startswith("FN:"):
-                        # Replace FN with sequence
                         new_content += f"FN:{new_c_name_base} {counter}\n"
                         counter += 1
                     else:
@@ -440,10 +442,15 @@ async def process_ren_ctc(c, m, uid, custom):
             
             with open(out_name, 'w', encoding='utf-8') as f: f.write(new_content)
             await m.reply_document(out_name)
-            if i==0: 
-                try: await proc_msg.delete()
-                except: pass
-            os.remove(out_name); os.remove(path)
+            
+            if i == 0:
+                try:
+                    await proc_msg.delete()
+                except:
+                    pass
+            
+            os.remove(out_name)
+            os.remove(path)
             
         await m.reply("✅ **All Files Done.**")
     except Exception as e: await m.reply(f"❌ Error: {e}")
@@ -458,7 +465,6 @@ async def process_split(c, m, uid, custom):
         
         if is_vcf:
             with open(path, 'r', encoding='utf-8', errors='ignore') as f: content = f.read()
-            # Split by VCF blocks, keeping order intact
             items = [x+"END:VCARD\n" for x in content.strip().split("END:VCARD") if "BEGIN:VCARD" in x]
             ext = ".vcf"
         else:
@@ -472,16 +478,18 @@ async def process_split(c, m, uid, custom):
             
             with open(out_name, 'w', encoding='utf-8') as f: f.writelines(chunk)
             await m.reply_document(out_name)
-            if i==0: 
-                try: await proc_msg.delete()
-                except: pass
+            
+            if i == 0:
+                try:
+                    await proc_msg.delete()
+                except:
+                    pass
+            
             os.remove(out_name)
         os.remove(path)
         await m.reply("✅ **All Files Done.**")
     except Exception as e: await m.reply(f"❌ Error: {e}")
     await reset_user(uid)
-
-# ... (V2T, Rename File, Merge, etc. remain same standard logic) ...
 
 async def process_v2t(c, m, uid, custom):
     proc_msg = await m.reply("⚙️ **Processing...**")
@@ -495,9 +503,15 @@ async def process_v2t(c, m, uid, custom):
                     if "TEL" in l: nums.append(l.split(':')[-1].strip())
             with open(out_name, 'w', encoding='utf-8') as f: f.write("\n".join(nums))
             await m.reply_document(out_name)
-            if i==0: try: await proc_msg.delete()
-            except: pass
-            os.remove(out_name); os.remove(path)
+            
+            if i == 0:
+                try:
+                    await proc_msg.delete()
+                except:
+                    pass
+            
+            os.remove(out_name)
+            os.remove(path)
         await m.reply("✅ **All Files Done.**")
     except Exception as e: await m.reply(f"❌ Error: {e}")
     await reset_user(uid)
@@ -511,8 +525,13 @@ async def process_rename(c, m, uid, custom):
             new_name = f"{user_data[uid].get('custom_name')} {i+1}{ext}" if custom else f"{user_data[uid]['original_names'][i]}{ext}"
             os.rename(path, new_name)
             await m.reply_document(new_name)
-            if i==0: try: await proc_msg.delete()
-            except: pass
+            
+            if i == 0:
+                try:
+                    await proc_msg.delete()
+                except:
+                    pass
+            
             os.remove(new_name)
         await m.reply("✅ **All Files Done.**")
     except Exception as e: await m.reply(f"❌ Error: {e}")
@@ -529,8 +548,12 @@ async def process_merge(c, m, uid, custom, ext):
                     outfile.write(infile.read())
                     if ext == ".txt": outfile.write("\n")
                 os.remove(path)
-        try: await proc_msg.delete()
-        except: pass
+        
+        try:
+            await proc_msg.delete()
+        except:
+            pass
+        
         await m.reply_document(final_name)
         await m.reply("✅ **Merge Done.**")
         os.remove(final_name)
