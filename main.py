@@ -112,7 +112,7 @@ async def start(client, message):
         "➤ **/vcf_to_txt** - Bulk VCF to Text\n"
         "➤ **/msg_to_txt** - Message to TXT File\n"
         "➤ **/rename_file** - Bulk Rename Files\n"
-        "➤ **/rename_ctc** - Rename Contact Name VCF\n"
+        "➤ **/rename_ctc** - Rename CTC Name VCF\n"
         "➤ **/merge_vcf** - Merge Multiple VCFs\n"
         "➤ **/merge_txt** - Merge Multiple TXTs\n"
         "➤ **/split_file** - Split VCF-TXT Files\n"
