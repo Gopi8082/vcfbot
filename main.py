@@ -4,7 +4,6 @@ from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, Message, ForceReply
 
 # --- CONFIGURATION (Environment Variables) ---
-# Ye values ab code mein nahi, Server ki Settings mein dalni hongi
 API_ID = int(os.getenv("API_ID", "0")) 
 API_HASH = os.getenv("API_HASH", "")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
@@ -48,6 +47,8 @@ user_data = {}
 
 # States
 S_NONE = 0
+
+# Existing States
 S_COLLECTING_T2V = 1
 S_T2V_CONTACT_NAME = 2
 S_T2V_FILE_MODE = 3
@@ -67,6 +68,20 @@ S_SPLIT_CUSTOM = 16
 S_NAVY_TEXT = 17
 S_NAVY_FILENAME = 18
 
+# New States
+S_COLLECTING_REN_CTC = 19
+S_REN_CTC_NAME = 20
+S_REN_CTC_MODE = 21
+S_REN_CTC_CUSTOM = 22
+
+S_COLLECTING_MERGE_VCF = 23
+S_MERGE_VCF_MODE = 24
+S_MERGE_VCF_CUSTOM = 25
+
+S_COLLECTING_MERGE_TXT = 26
+S_MERGE_TXT_MODE = 27
+S_MERGE_TXT_CUSTOM = 28
+
 # --- HELPER FUNCTIONS ---
 def is_admin(user_id):
     return user_id in ADMINS
@@ -81,7 +96,7 @@ async def reset_user(user_id):
 # --- KEYBOARDS ---
 DONE_BTN = InlineKeyboardMarkup([[InlineKeyboardButton("✅ Upload Done / Next", callback_data="done_batch")]])
 NAME_MODE_BTN = InlineKeyboardMarkup([
-    [InlineKeyboardButton("📂 Default (Original Name)", callback_data="name_default")],
+    [InlineKeyboardButton("📂 Default Name", callback_data="name_default")],
     [InlineKeyboardButton("✏️ Custom Name", callback_data="name_custom")]
 ])
 
@@ -96,7 +111,10 @@ async def start(client, message):
         "➤ **/txt_to_vcf** - Bulk Text to VCF\n"
         "➤ **/vcf_to_txt** - Bulk VCF to Text\n"
         "➤ **/msg_to_txt** - Message to File\n"
-        "➤ **/rename_file** - Bulk Rename\n"
+        "➤ **/rename_file** - Bulk Rename Files\n"
+        "➤ **/rename_ctc** - Bulk Rename Contact Name (VCF)\n"
+        "➤ **/merge_vcf** - Merge Multiple VCFs\n"
+        "➤ **/merge_txt** - Merge Multiple TXTs\n"
         "➤ **/split_file** - Split Big Files\n"
         "➤ **/admin_navy_file** - Admin Format\n"
         "➤ **/reset** - Cancel Process"
@@ -129,27 +147,53 @@ async def del_adm(c, m):
                 await m.reply(f"🗑️ **User {uid} removed from Admin.**")
         except: pass
 
-# --- HANDLERS (Same Logic as before) ---
+# --- HANDLERS ---
+
+# 1. NEW: RENAME CTC (VCF)
+@app.on_message(filters.command("rename_ctc"))
+async def ren_ctc_start(c, m):
+    if not is_admin(m.from_user.id): return
+    uid = m.from_user.id
+    user_data[uid] = {'state': S_COLLECTING_REN_CTC, 'files': [], 'original_names': []}
+    await m.reply("📂 **Send VCF Files to Rename Contacts.**\nAuto-delete enabled. Click Done when finished.", reply_markup=DONE_BTN)
+
+# 2. NEW: MERGE VCF
+@app.on_message(filters.command("merge_vcf"))
+async def merge_vcf_start(c, m):
+    if not is_admin(m.from_user.id): return
+    uid = m.from_user.id
+    user_data[uid] = {'state': S_COLLECTING_MERGE_VCF, 'files': []}
+    await m.reply("📂 **Send VCF Files to Merge.**\nAuto-delete enabled. Click Done when finished.", reply_markup=DONE_BTN)
+
+# 3. NEW: MERGE TXT
+@app.on_message(filters.command("merge_txt"))
+async def merge_txt_start(c, m):
+    if not is_admin(m.from_user.id): return
+    uid = m.from_user.id
+    user_data[uid] = {'state': S_COLLECTING_MERGE_TXT, 'files': []}
+    await m.reply("📂 **Send Text Files to Merge.**\nAuto-delete enabled. Click Done when finished.", reply_markup=DONE_BTN)
+
+# Existing Handlers
 @app.on_message(filters.command("txt_to_vcf"))
 async def t2v_start(c, m):
     if not is_admin(m.from_user.id): return
     uid = m.from_user.id
     user_data[uid] = {'state': S_COLLECTING_T2V, 'files': [], 'original_names': []}
-    await m.reply("📂 **Send Text Files (One by One).**\nFiles auto-delete hone ke baad **Done Button** dabayein.", reply_markup=DONE_BTN)
+    await m.reply("📂 **Send Text Files.**\nClick Done when finished.", reply_markup=DONE_BTN)
 
 @app.on_message(filters.command("vcf_to_txt"))
 async def v2t_start(c, m):
     if not is_admin(m.from_user.id): return
     uid = m.from_user.id
     user_data[uid] = {'state': S_COLLECTING_V2T, 'files': [], 'original_names': []}
-    await m.reply("📂 **Send VCF Files (One by One).**\nFiles auto-delete hone ke baad **Done Button** dabayein.", reply_markup=DONE_BTN)
+    await m.reply("📂 **Send VCF Files.**\nClick Done when finished.", reply_markup=DONE_BTN)
 
 @app.on_message(filters.command("rename_file"))
 async def ren_start(c, m):
     if not is_admin(m.from_user.id): return
     uid = m.from_user.id
     user_data[uid] = {'state': S_COLLECTING_RENAME, 'files': [], 'exts': [], 'original_names': []}
-    await m.reply("📂 **Send Files to Rename.**\nFiles auto-delete hone ke baad **Done Button** dabayein.", reply_markup=DONE_BTN)
+    await m.reply("📂 **Send Files to Rename.**\nClick Done when finished.", reply_markup=DONE_BTN)
 
 @app.on_message(filters.command("msg_to_txt"))
 async def m2t_start(c, m):
@@ -176,12 +220,20 @@ async def handle_docs(c, m):
     if uid not in user_data: return
     st = user_data[uid].get('state')
 
-    if st in [S_COLLECTING_T2V, S_COLLECTING_V2T, S_COLLECTING_RENAME]:
+    # Group 1: Collections that need original names
+    if st in [S_COLLECTING_T2V, S_COLLECTING_V2T, S_COLLECTING_RENAME, S_COLLECTING_REN_CTC]:
         path = await m.download()
         user_data[uid]['files'].append(path)
         base, ext = os.path.splitext(m.document.file_name)
         user_data[uid]['original_names'].append(base)
         if st == S_COLLECTING_RENAME: user_data[uid]['exts'].append(ext)
+        try: await m.delete()
+        except: pass
+
+    # Group 2: Collections for Merge (Just files needed)
+    elif st in [S_COLLECTING_MERGE_VCF, S_COLLECTING_MERGE_TXT]:
+        path = await m.download()
+        user_data[uid]['files'].append(path)
         try: await m.delete()
         except: pass
 
@@ -212,39 +264,58 @@ async def cb_handler(c, q):
     data = q.data
 
     if data == "done_batch":
+        # Check if files exist
+        if st in [S_COLLECTING_T2V, S_COLLECTING_V2T, S_COLLECTING_RENAME, S_COLLECTING_REN_CTC, S_COLLECTING_MERGE_VCF, S_COLLECTING_MERGE_TXT]:
+             if not user_data[uid]['files']: return await q.answer("❌ No files!", show_alert=True)
+
         if st == S_COLLECTING_T2V:
-            if not user_data[uid]['files']: return await q.answer("❌ No files!", show_alert=True)
             user_data[uid]['state'] = S_T2V_CONTACT_NAME
             await q.message.edit(f"✅ **Files Received.**\n\n👤 **Enter Contact Name:**")
         elif st == S_COLLECTING_V2T:
-            if not user_data[uid]['files']: return await q.answer("❌ No files!", show_alert=True)
             user_data[uid]['state'] = S_V2T_MODE
             await q.message.edit("📝 **Select Output File Name Mode:**", reply_markup=NAME_MODE_BTN)
         elif st == S_COLLECTING_RENAME:
-            if not user_data[uid]['files']: return await q.answer("❌ No files!", show_alert=True)
             user_data[uid]['state'] = S_RENAME_MODE
             await q.message.edit("📝 **Select Renaming Mode:**", reply_markup=NAME_MODE_BTN)
+        
+        # New Feature Logic
+        elif st == S_COLLECTING_REN_CTC:
+            user_data[uid]['state'] = S_REN_CTC_NAME
+            await q.message.edit(f"✅ **Files Received.**\n\n👤 **Enter NEW Contact Name:**")
+        elif st == S_COLLECTING_MERGE_VCF:
+            user_data[uid]['state'] = S_MERGE_VCF_MODE
+            await q.message.edit("📝 **Select Merged File Name Mode:**", reply_markup=NAME_MODE_BTN)
+        elif st == S_COLLECTING_MERGE_TXT:
+            user_data[uid]['state'] = S_MERGE_TXT_MODE
+            await q.message.edit("📝 **Select Merged File Name Mode:**", reply_markup=NAME_MODE_BTN)
 
     elif data == "name_default":
         if st == S_T2V_FILE_MODE: await process_t2v(c, q.message, uid, False)
         elif st == S_V2T_MODE:    await process_v2t(c, q.message, uid, False)
         elif st == S_RENAME_MODE: await process_rename(c, q.message, uid, False)
         elif st == S_SPLIT_MODE:  await process_split(c, q.message, uid, False)
+        
+        elif st == S_REN_CTC_MODE: await process_ren_ctc(c, q.message, uid, False)
+        elif st == S_MERGE_VCF_MODE: await process_merge(c, q.message, uid, False, ".vcf")
+        elif st == S_MERGE_TXT_MODE: await process_merge(c, q.message, uid, False, ".txt")
 
     elif data == "name_custom":
-        msg_text = "✏️ **Enter Custom File Name:**\n(Files will be named Name 1, Name 2...)"
+        msg_text = "✏️ **Enter Custom File Name:**"
         if st == S_T2V_FILE_MODE:
-            user_data[uid]['state'] = S_T2V_CUSTOM_NAME
-            await q.message.edit(msg_text)
+            user_data[uid]['state'] = S_T2V_CUSTOM_NAME; await q.message.edit(msg_text)
         elif st == S_V2T_MODE:
-            user_data[uid]['state'] = S_V2T_CUSTOM
-            await q.message.edit(msg_text)
+            user_data[uid]['state'] = S_V2T_CUSTOM; await q.message.edit(msg_text)
         elif st == S_RENAME_MODE:
-            user_data[uid]['state'] = S_RENAME_CUSTOM
-            await q.message.edit(msg_text)
+            user_data[uid]['state'] = S_RENAME_CUSTOM; await q.message.edit(msg_text)
         elif st == S_SPLIT_MODE:
-            user_data[uid]['state'] = S_SPLIT_CUSTOM
-            await q.message.edit(msg_text)
+            user_data[uid]['state'] = S_SPLIT_CUSTOM; await q.message.edit(msg_text)
+            
+        elif st == S_REN_CTC_MODE:
+            user_data[uid]['state'] = S_REN_CTC_CUSTOM; await q.message.edit(msg_text)
+        elif st == S_MERGE_VCF_MODE:
+            user_data[uid]['state'] = S_MERGE_VCF_CUSTOM; await q.message.edit(msg_text)
+        elif st == S_MERGE_TXT_MODE:
+            user_data[uid]['state'] = S_MERGE_TXT_CUSTOM; await q.message.edit(msg_text)
 
 # --- TEXT HANDLER ---
 @app.on_message(filters.text)
@@ -257,15 +328,28 @@ async def text_handler(c, m):
         user_data[uid]['c_name'] = m.text
         user_data[uid]['state'] = S_T2V_FILE_MODE
         await m.reply("📝 **Select Output File Name Mode:**", reply_markup=NAME_MODE_BTN)
+    
+    # New: Rename CTC Name input
+    elif st == S_REN_CTC_NAME:
+        user_data[uid]['c_name'] = m.text
+        user_data[uid]['state'] = S_REN_CTC_MODE
+        await m.reply("📝 **Select Output File Name Mode:**", reply_markup=NAME_MODE_BTN)
+
+    # Custom Name Inputs
     elif st == S_T2V_CUSTOM_NAME:
-        user_data[uid]['custom_name'] = m.text
-        await process_t2v(c, m, uid, True)
+        user_data[uid]['custom_name'] = m.text; await process_t2v(c, m, uid, True)
     elif st == S_V2T_CUSTOM:
-        user_data[uid]['custom_name'] = m.text
-        await process_v2t(c, m, uid, True)
+        user_data[uid]['custom_name'] = m.text; await process_v2t(c, m, uid, True)
     elif st == S_RENAME_CUSTOM:
-        user_data[uid]['custom_name'] = m.text
-        await process_rename(c, m, uid, True)
+        user_data[uid]['custom_name'] = m.text; await process_rename(c, m, uid, True)
+    
+    elif st == S_REN_CTC_CUSTOM:
+        user_data[uid]['custom_name'] = m.text; await process_ren_ctc(c, m, uid, True)
+    elif st == S_MERGE_VCF_CUSTOM:
+        user_data[uid]['custom_name'] = m.text; await process_merge(c, m, uid, True, ".vcf")
+    elif st == S_MERGE_TXT_CUSTOM:
+        user_data[uid]['custom_name'] = m.text; await process_merge(c, m, uid, True, ".txt")
+
     elif st == S_MSG_INPUT:
         user_data[uid]['msg_content'] = m.text
         user_data[uid]['state'] = S_MSG_FILENAME
@@ -311,6 +395,7 @@ async def text_handler(c, m):
         await reset_user(uid)
 
 # --- PROCESSORS ---
+
 async def process_t2v(c, m, uid, custom):
     proc_msg = await m.reply("⚙️ **Processing...**")
     try:
@@ -390,6 +475,70 @@ async def process_split(c, m, uid, custom):
             os.remove(out_name)
         os.remove(path)
         await m.reply("✅ **All Files Done.**")
+    except Exception as e: await m.reply(f"❌ Error: {e}")
+    await reset_user(uid)
+
+# --- NEW PROCESSORS ---
+
+async def process_ren_ctc(c, m, uid, custom):
+    # Rename Contact Name inside VCF
+    proc_msg = await m.reply("⚙️ **Processing...**")
+    files = user_data[uid]['files']
+    new_c_name = user_data[uid]['c_name']
+    
+    try:
+        for i, path in enumerate(files):
+            out_name = f"{user_data[uid].get('custom_name')} {i+1}.vcf" if custom else f"{user_data[uid]['original_names'][i]}.vcf"
+            
+            # Read and replace FN:
+            new_content = ""
+            with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                for line in f:
+                    if line.startswith("FN:"):
+                        new_content += f"FN:{new_c_name}\n"
+                    else:
+                        new_content += line
+            
+            with open(out_name, 'w', encoding='utf-8') as f: f.write(new_content)
+            await m.reply_document(out_name)
+            
+            if i==0: 
+                try: await proc_msg.delete()
+                except: pass
+            os.remove(out_name); os.remove(path)
+            
+        await m.reply("✅ **All Files Done.**")
+    except Exception as e: await m.reply(f"❌ Error: {e}")
+    await reset_user(uid)
+
+async def process_merge(c, m, uid, custom, ext):
+    # Merge VCF or TXT
+    proc_msg = await m.reply("⚙️ **Processing Merge...**")
+    files = user_data[uid]['files']
+    
+    # Output Filename
+    if custom:
+        final_name = f"{user_data[uid].get('custom_name')}{ext}"
+    else:
+        # Default name
+        final_name = f"Merged_Output{ext}"
+
+    try:
+        with open(final_name, 'w', encoding='utf-8') as outfile:
+            for path in files:
+                with open(path, 'r', encoding='utf-8', errors='ignore') as infile:
+                    outfile.write(infile.read())
+                    # Ensure newline between files if TXT, for VCF it's okay
+                    if ext == ".txt": outfile.write("\n")
+                os.remove(path) # Clean input files
+        
+        try: await proc_msg.delete()
+        except: pass
+        
+        await m.reply_document(final_name)
+        await m.reply("✅ **Merge Done.**")
+        os.remove(final_name)
+        
     except Exception as e: await m.reply(f"❌ Error: {e}")
     await reset_user(uid)
 
