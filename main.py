@@ -106,15 +106,15 @@ async def start(client, message):
     await message.reply(
         "⚡ **Professional Batch Bot Ready**\n\n"
         "**Available Tools:**\n"
-        "➤ **/txt_to_vcf** - Text to VCF (Sequential)\n"
+        "➤ **/txt_to_vcf** - Text to VCF\n"
         "➤ **/vcf_to_txt** - VCF to Text\n"
-        "➤ **/msg_to_txt** - Message to File\n"
+        "➤ **/msg_to_txt** - Message to Txt File\n"
         "➤ **/rename_file** - Bulk Rename Files\n"
-        "➤ **/rename_ctc** - Rename Contact Name (Sequential)\n"
+        "➤ **/rename_ctc** - Rename Contact Name\n"
         "➤ **/merge_vcf** - Merge Multiple VCFs\n"
         "➤ **/merge_txt** - Merge Multiple TXTs\n"
-        "➤ **/split_file** - Split Big Files\n"
-        "➤ **/admin_navy_file** - Admin Format\n"
+        "➤ **/split_file** - Split Mem Per File\n"
+        "➤ **/admin_navy_file** - Admin Navy File\n"
         "➤ **/reset** - Cancel Process"
     )
 
