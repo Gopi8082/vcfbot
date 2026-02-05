@@ -1,0 +1,397 @@
+import os
+import asyncio
+from pyrogram import Client, filters
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, Message, ForceReply
+
+# --- CONFIGURATION (Environment Variables) ---
+# Ye values ab code mein nahi, Server ki Settings mein dalni hongi
+API_ID = int(os.getenv("API_ID", "0")) 
+API_HASH = os.getenv("API_HASH", "")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+OWNER_ID = int(os.getenv("OWNER_ID", "0"))
+
+# --- ADMIN SYSTEM ---
+ADMIN_FILE = "admins.txt"
+
+def get_admins():
+    admins = {OWNER_ID}
+    if os.path.exists(ADMIN_FILE):
+        with open(ADMIN_FILE, "r") as f:
+            for line in f:
+                if line.strip().isdigit():
+                    admins.add(int(line.strip()))
+    return admins
+
+def add_admin_to_file(user_id):
+    with open(ADMIN_FILE, "a") as f: f.write(f"{user_id}\n")
+
+def remove_admin_from_file(user_id):
+    admins = get_admins()
+    if user_id in admins:
+        admins.remove(user_id)
+        with open(ADMIN_FILE, "w") as f:
+            for admin in admins:
+                if admin != OWNER_ID: f.write(f"{admin}\n")
+    return admins
+
+ADMINS = get_admins()
+
+# --- APP SETUP ---
+if not BOT_TOKEN:
+    print("Error: BOT_TOKEN variable not found!")
+    exit()
+
+app = Client("fast_contact_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+
+# --- STATE MANAGEMENT ---
+user_data = {}
+
+# States
+S_NONE = 0
+S_COLLECTING_T2V = 1
+S_T2V_CONTACT_NAME = 2
+S_T2V_FILE_MODE = 3
+S_T2V_CUSTOM_NAME = 4
+S_COLLECTING_V2T = 5
+S_V2T_MODE = 6
+S_V2T_CUSTOM = 7
+S_COLLECTING_RENAME = 8
+S_RENAME_MODE = 9
+S_RENAME_CUSTOM = 10
+S_MSG_INPUT = 11
+S_MSG_FILENAME = 12
+S_SPLIT_FILE = 13
+S_SPLIT_COUNT = 14
+S_SPLIT_MODE = 15
+S_SPLIT_CUSTOM = 16
+S_NAVY_TEXT = 17
+S_NAVY_FILENAME = 18
+
+# --- HELPER FUNCTIONS ---
+def is_admin(user_id):
+    return user_id in ADMINS
+
+async def reset_user(user_id):
+    if user_id in user_data:
+        if 'files' in user_data[user_id]:
+            for f in user_data[user_id]['files']:
+                if os.path.exists(f): os.remove(f)
+        del user_data[user_id]
+
+# --- KEYBOARDS ---
+DONE_BTN = InlineKeyboardMarkup([[InlineKeyboardButton("✅ Upload Done / Next", callback_data="done_batch")]])
+NAME_MODE_BTN = InlineKeyboardMarkup([
+    [InlineKeyboardButton("📂 Default (Original Name)", callback_data="name_default")],
+    [InlineKeyboardButton("✏️ Custom Name", callback_data="name_custom")]
+])
+
+# --- COMMANDS ---
+
+@app.on_message(filters.command("start"))
+async def start(client, message):
+    if not is_admin(message.from_user.id): return
+    await message.reply(
+        "⚡ **Professional Bot Ready**\n\n"
+        "**Available Tools:**\n"
+        "➤ **/txt_to_vcf** - Bulk Text to VCF\n"
+        "➤ **/vcf_to_txt** - Bulk VCF to Text\n"
+        "➤ **/msg_to_txt** - Message to File\n"
+        "➤ **/rename_file** - Bulk Rename\n"
+        "➤ **/split_file** - Split Big Files\n"
+        "➤ **/admin_navy_file** - Admin Format\n"
+        "➤ **/reset** - Cancel Process"
+    )
+
+@app.on_message(filters.command("reset"))
+async def reset(client, message):
+    await reset_user(message.from_user.id)
+    await message.reply("🔄 **Process Reset Successfully.**")
+
+# --- ADMIN COMMANDS ---
+@app.on_message(filters.command("addadmin") & filters.user(OWNER_ID))
+async def add_adm(c, m):
+    if len(m.command) > 1:
+        try:
+            uid = int(m.command[1])
+            add_admin_to_file(uid)
+            ADMINS.add(uid)
+            await m.reply(f"✅ **User {uid} added as Admin.**")
+        except: pass
+
+@app.on_message(filters.command("deladmin") & filters.user(OWNER_ID))
+async def del_adm(c, m):
+    if len(m.command) > 1:
+        try:
+            uid = int(m.command[1])
+            if uid in ADMINS:
+                ADMINS.remove(uid)
+                remove_admin_from_file(uid)
+                await m.reply(f"🗑️ **User {uid} removed from Admin.**")
+        except: pass
+
+# --- HANDLERS (Same Logic as before) ---
+@app.on_message(filters.command("txt_to_vcf"))
+async def t2v_start(c, m):
+    if not is_admin(m.from_user.id): return
+    uid = m.from_user.id
+    user_data[uid] = {'state': S_COLLECTING_T2V, 'files': [], 'original_names': []}
+    await m.reply("📂 **Send Text Files (One by One).**\nFiles auto-delete hone ke baad **Done Button** dabayein.", reply_markup=DONE_BTN)
+
+@app.on_message(filters.command("vcf_to_txt"))
+async def v2t_start(c, m):
+    if not is_admin(m.from_user.id): return
+    uid = m.from_user.id
+    user_data[uid] = {'state': S_COLLECTING_V2T, 'files': [], 'original_names': []}
+    await m.reply("📂 **Send VCF Files (One by One).**\nFiles auto-delete hone ke baad **Done Button** dabayein.", reply_markup=DONE_BTN)
+
+@app.on_message(filters.command("rename_file"))
+async def ren_start(c, m):
+    if not is_admin(m.from_user.id): return
+    uid = m.from_user.id
+    user_data[uid] = {'state': S_COLLECTING_RENAME, 'files': [], 'exts': [], 'original_names': []}
+    await m.reply("📂 **Send Files to Rename.**\nFiles auto-delete hone ke baad **Done Button** dabayein.", reply_markup=DONE_BTN)
+
+@app.on_message(filters.command("msg_to_txt"))
+async def m2t_start(c, m):
+    if not is_admin(m.from_user.id): return
+    user_data[m.from_user.id] = {'state': S_MSG_INPUT}
+    await m.reply("📝 **Type your message content below:**", reply_markup=ForceReply(True))
+
+@app.on_message(filters.command("split_file"))
+async def split_start(c, m):
+    if not is_admin(m.from_user.id): return
+    user_data[m.from_user.id] = {'state': S_SPLIT_FILE}
+    await m.reply("✂️ **Send the File you want to split:**")
+
+@app.on_message(filters.command("admin_navy_file"))
+async def navy_start(c, m):
+    if not is_admin(m.from_user.id): return
+    user_data[m.from_user.id] = {'state': S_NAVY_TEXT}
+    await m.reply("📝 **Send Data in Admin/Navy Format:**", reply_markup=ForceReply(True))
+
+# --- FILE COLLECTOR ---
+@app.on_message(filters.document)
+async def handle_docs(c, m):
+    uid = m.from_user.id
+    if uid not in user_data: return
+    st = user_data[uid].get('state')
+
+    if st in [S_COLLECTING_T2V, S_COLLECTING_V2T, S_COLLECTING_RENAME]:
+        path = await m.download()
+        user_data[uid]['files'].append(path)
+        base, ext = os.path.splitext(m.document.file_name)
+        user_data[uid]['original_names'].append(base)
+        if st == S_COLLECTING_RENAME: user_data[uid]['exts'].append(ext)
+        try: await m.delete()
+        except: pass
+
+    elif st == S_SPLIT_FILE:
+        msg = await m.reply("🔄 **Analyzing File...**")
+        path = await m.download()
+        base, ext = os.path.splitext(m.document.file_name)
+        try: await m.delete()
+        except: pass
+        
+        is_vcf = path.endswith(".vcf")
+        count = 0
+        with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+            count = content.count("BEGIN:VCARD") if is_vcf else len(content.splitlines())
+        
+        user_data[uid].update({'state': S_SPLIT_COUNT, 'path': path, 'is_vcf': is_vcf, 'total_items': count, 'original_name': base})
+        try: await msg.delete() 
+        except: pass
+        await m.reply(f"📊 **File Analysis Complete.**\n\n**Total Numbers:** `{count}`\n\n🔢 **Enter how many per file?**")
+
+# --- CALLBACKS ---
+@app.on_callback_query()
+async def cb_handler(c, q):
+    uid = q.from_user.id
+    if uid not in user_data: return await q.answer("Session expired.")
+    st = user_data[uid].get('state')
+    data = q.data
+
+    if data == "done_batch":
+        if st == S_COLLECTING_T2V:
+            if not user_data[uid]['files']: return await q.answer("❌ No files!", show_alert=True)
+            user_data[uid]['state'] = S_T2V_CONTACT_NAME
+            await q.message.edit(f"✅ **Files Received.**\n\n👤 **Enter Contact Name:**")
+        elif st == S_COLLECTING_V2T:
+            if not user_data[uid]['files']: return await q.answer("❌ No files!", show_alert=True)
+            user_data[uid]['state'] = S_V2T_MODE
+            await q.message.edit("📝 **Select Output File Name Mode:**", reply_markup=NAME_MODE_BTN)
+        elif st == S_COLLECTING_RENAME:
+            if not user_data[uid]['files']: return await q.answer("❌ No files!", show_alert=True)
+            user_data[uid]['state'] = S_RENAME_MODE
+            await q.message.edit("📝 **Select Renaming Mode:**", reply_markup=NAME_MODE_BTN)
+
+    elif data == "name_default":
+        if st == S_T2V_FILE_MODE: await process_t2v(c, q.message, uid, False)
+        elif st == S_V2T_MODE:    await process_v2t(c, q.message, uid, False)
+        elif st == S_RENAME_MODE: await process_rename(c, q.message, uid, False)
+        elif st == S_SPLIT_MODE:  await process_split(c, q.message, uid, False)
+
+    elif data == "name_custom":
+        msg_text = "✏️ **Enter Custom File Name:**\n(Files will be named Name 1, Name 2...)"
+        if st == S_T2V_FILE_MODE:
+            user_data[uid]['state'] = S_T2V_CUSTOM_NAME
+            await q.message.edit(msg_text)
+        elif st == S_V2T_MODE:
+            user_data[uid]['state'] = S_V2T_CUSTOM
+            await q.message.edit(msg_text)
+        elif st == S_RENAME_MODE:
+            user_data[uid]['state'] = S_RENAME_CUSTOM
+            await q.message.edit(msg_text)
+        elif st == S_SPLIT_MODE:
+            user_data[uid]['state'] = S_SPLIT_CUSTOM
+            await q.message.edit(msg_text)
+
+# --- TEXT HANDLER ---
+@app.on_message(filters.text)
+async def text_handler(c, m):
+    uid = m.from_user.id
+    if uid not in user_data: return
+    st = user_data[uid].get('state')
+
+    if st == S_T2V_CONTACT_NAME:
+        user_data[uid]['c_name'] = m.text
+        user_data[uid]['state'] = S_T2V_FILE_MODE
+        await m.reply("📝 **Select Output File Name Mode:**", reply_markup=NAME_MODE_BTN)
+    elif st == S_T2V_CUSTOM_NAME:
+        user_data[uid]['custom_name'] = m.text
+        await process_t2v(c, m, uid, True)
+    elif st == S_V2T_CUSTOM:
+        user_data[uid]['custom_name'] = m.text
+        await process_v2t(c, m, uid, True)
+    elif st == S_RENAME_CUSTOM:
+        user_data[uid]['custom_name'] = m.text
+        await process_rename(c, m, uid, True)
+    elif st == S_MSG_INPUT:
+        user_data[uid]['msg_content'] = m.text
+        user_data[uid]['state'] = S_MSG_FILENAME
+        await m.reply("📝 **Enter File Name:**")
+    elif st == S_MSG_FILENAME:
+        fname = m.text.strip()
+        if not fname.endswith(".txt"): fname += ".txt"
+        with open(fname, 'w', encoding='utf-8') as f: f.write(user_data[uid]['msg_content'])
+        await m.reply_document(fname)
+        await m.reply("✅ **Done!**")
+        os.remove(fname)
+        await reset_user(uid)
+    elif st == S_SPLIT_COUNT:
+        try:
+            count = int(m.text)
+            user_data[uid]['split_count'] = count
+            user_data[uid]['state'] = S_SPLIT_MODE
+            await m.reply("📝 **Select Output File Name Mode:**", reply_markup=NAME_MODE_BTN)
+        except: await m.reply("❌ **Please enter a valid number.**")
+    elif st == S_SPLIT_CUSTOM:
+        user_data[uid]['custom_name'] = m.text
+        await process_split(c, m, uid, True)
+    elif st == S_NAVY_TEXT:
+        user_data[uid]['text'] = m.text
+        user_data[uid]['state'] = S_NAVY_FILENAME
+        await m.reply("📝 **Enter Output File Name:**")
+    elif st == S_NAVY_FILENAME:
+        fname = m.text.strip() + ".vcf"
+        raw = user_data[uid]['text']
+        vcf, tn = "", None
+        for l in raw.splitlines():
+            l=l.strip()
+            if not l: continue
+            if l.replace('+','').isdigit() and len(l)>5:
+                if tn:
+                    vcf+=f"BEGIN:VCARD\nVERSION:3.0\nFN:{tn}\nTEL;TYPE=CELL:{l}\nEND:VCARD\n"
+                    tn=None
+            else: tn=l
+        with open(fname,'w',encoding='utf-8') as f: f.write(vcf)
+        await m.reply_document(fname)
+        await m.reply("✅ **Done!**")
+        os.remove(fname)
+        await reset_user(uid)
+
+# --- PROCESSORS ---
+async def process_t2v(c, m, uid, custom):
+    proc_msg = await m.reply("⚙️ **Processing...**")
+    try:
+        files = user_data[uid]['files']
+        for i, path in enumerate(files):
+            out_name = f"{user_data[uid].get('custom_name')} {i+1}.vcf" if custom else f"{user_data[uid]['original_names'][i]}.vcf"
+            with open(path, 'r', encoding='utf-8', errors='ignore') as f: lines = f.readlines()
+            data = ""
+            for num in lines:
+                num = num.strip()
+                if num: data += f"BEGIN:VCARD\nVERSION:3.0\nFN:{user_data[uid]['c_name']}\nTEL;TYPE=CELL:{num}\nEND:VCARD\n"
+            with open(out_name, 'w', encoding='utf-8') as f: f.write(data)
+            await m.reply_document(out_name)
+            if i==0: 
+                try: await proc_msg.delete()
+                except: pass
+            os.remove(out_name); os.remove(path)
+        await m.reply("✅ **All Files Done.**")
+    except Exception as e: await m.reply(f"❌ Error: {e}")
+    await reset_user(uid)
+
+async def process_v2t(c, m, uid, custom):
+    proc_msg = await m.reply("⚙️ **Processing...**")
+    try:
+        files = user_data[uid]['files']
+        for i, path in enumerate(files):
+            out_name = f"{user_data[uid].get('custom_name')} {i+1}.txt" if custom else f"{user_data[uid]['original_names'][i]}.txt"
+            nums = []
+            with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                for l in f:
+                    if "TEL" in l: nums.append(l.split(':')[-1].strip())
+            with open(out_name, 'w', encoding='utf-8') as f: f.write("\n".join(nums))
+            await m.reply_document(out_name)
+            if i==0: 
+                try: await proc_msg.delete()
+                except: pass
+            os.remove(out_name); os.remove(path)
+        await m.reply("✅ **All Files Done.**")
+    except Exception as e: await m.reply(f"❌ Error: {e}")
+    await reset_user(uid)
+
+async def process_rename(c, m, uid, custom):
+    proc_msg = await m.reply("⚙️ **Processing...**")
+    try:
+        files = user_data[uid]['files']
+        for i, path in enumerate(files):
+            ext = user_data[uid]['exts'][i]
+            new_name = f"{user_data[uid].get('custom_name')} {i+1}{ext}" if custom else f"{user_data[uid]['original_names'][i]}{ext}"
+            os.rename(path, new_name)
+            await m.reply_document(new_name)
+            if i==0: 
+                try: await proc_msg.delete()
+                except: pass
+            os.remove(new_name)
+        await m.reply("✅ **All Files Done.**")
+    except Exception as e: await m.reply(f"❌ Error: {e}")
+    await reset_user(uid)
+
+async def process_split(c, m, uid, custom):
+    proc_msg = await m.reply("⚙️ **Processing...**")
+    try:
+        path = user_data[uid]['path']
+        limit = user_data[uid]['split_count']
+        is_vcf = user_data[uid]['is_vcf']
+        with open(path, 'r', encoding='utf-8', errors='ignore') as f: content = f.read()
+        items = [x+"END:VCARD\n" for x in content.strip().split("END:VCARD") if "BEGIN:VCARD" in x] if is_vcf else open(path).readlines()
+        ext = ".vcf" if is_vcf else ".txt"
+        total = (len(items)+limit-1)//limit
+        for i in range(total):
+            chunk = items[i*limit:(i+1)*limit]
+            out_name = f"{user_data[uid].get('custom_name')} {i+1}{ext}" if custom else f"{user_data[uid]['original_name']} {i+1}{ext}"
+            with open(out_name, 'w', encoding='utf-8') as f: f.writelines(chunk)
+            await m.reply_document(out_name)
+            if i==0: 
+                try: await proc_msg.delete()
+                except: pass
+            os.remove(out_name)
+        os.remove(path)
+        await m.reply("✅ **All Files Done.**")
+    except Exception as e: await m.reply(f"❌ Error: {e}")
+    await reset_user(uid)
+
+print("🚀 Bot Started on Server...")
+app.run()
