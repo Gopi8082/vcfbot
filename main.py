@@ -108,7 +108,7 @@ async def start(client, message):
         "**Available Tools:**\n"
         "➤ **/txt_to_vcf** - Text to VCF\n"
         "➤ **/vcf_to_txt** - VCF to Text\n"
-        "➤ **/msg_to_txt** - Message to Txt File\n"
+        "➤ **/msg_to_txt** - Message to TXT File\n"
         "➤ **/rename_file** - Bulk Rename Files\n"
         "➤ **/rename_ctc** - Rename Contact Name\n"
         "➤ **/merge_vcf** - Merge Multiple VCFs\n"
@@ -214,30 +214,33 @@ async def handle_docs(c, m):
     if uid not in user_data: return
     st = user_data[uid].get('state')
 
-    # Group 1: Collections needing original names
     if st in [S_COLLECTING_T2V, S_COLLECTING_V2T, S_COLLECTING_RENAME, S_COLLECTING_REN_CTC]:
         path = await m.download()
         user_data[uid]['files'].append(path)
         base, ext = os.path.splitext(m.document.file_name)
         user_data[uid]['original_names'].append(base)
         if st == S_COLLECTING_RENAME: user_data[uid]['exts'].append(ext)
-        try: await m.delete()
-        except: pass
+        try:
+            await m.delete()
+        except:
+            pass
 
-    # Group 2: Merge Collections
     elif st in [S_COLLECTING_MERGE_VCF, S_COLLECTING_MERGE_TXT]:
         path = await m.download()
         user_data[uid]['files'].append(path)
-        try: await m.delete()
-        except: pass
+        try:
+            await m.delete()
+        except:
+            pass
 
-    # Group 3: Split
     elif st == S_SPLIT_FILE:
         msg = await m.reply("🔄 **Analyzing File...**")
         path = await m.download()
         base, ext = os.path.splitext(m.document.file_name)
-        try: await m.delete()
-        except: pass
+        try:
+            await m.delete()
+        except:
+            pass
         
         is_vcf = path.endswith(".vcf")
         count = 0
@@ -246,8 +249,10 @@ async def handle_docs(c, m):
             count = content.count("BEGIN:VCARD") if is_vcf else len(content.splitlines())
         
         user_data[uid].update({'state': S_SPLIT_COUNT, 'path': path, 'is_vcf': is_vcf, 'total_items': count, 'original_name': base})
-        try: await msg.delete() 
-        except: pass
+        try:
+            await msg.delete() 
+        except:
+            pass
         await m.reply(f"📊 **Analysis Complete.**\n\n**Total Numbers:** `{count}`\n\n🔢 **Enter how many per file?**")
 
 # --- CALLBACKS ---
@@ -315,7 +320,6 @@ async def text_handler(c, m):
     st = user_data[uid].get('state')
 
     if st == S_T2V_CONTACT_NAME:
-        # CLEAN NAME (Remove trailing numbers)
         raw_name = m.text
         user_data[uid]['c_name'] = clean_contact_name(raw_name)
         user_data[uid]['state'] = S_T2V_FILE_MODE
@@ -347,11 +351,23 @@ async def text_handler(c, m):
     elif st == S_MSG_FILENAME:
         fname = m.text.strip()
         if not fname.endswith(".txt"): fname += ".txt"
-        with open(fname, 'w', encoding='utf-8') as f: f.write(user_data[uid]['msg_content'])
+        
+        # Adding + logically for Message to TXT if lines contain numbers
+        msg_content = user_data[uid]['msg_content']
+        new_content = ""
+        for line in msg_content.splitlines():
+            line = line.strip()
+            if line.replace('+', '').isdigit():
+                new_content += "+" + line.replace('+', '') + "\n"
+            else:
+                new_content += line + "\n"
+
+        with open(fname, 'w', encoding='utf-8') as f: f.write(new_content)
         await m.reply_document(fname)
         await m.reply("✅ **Done!**")
         os.remove(fname)
         await reset_user(uid)
+        
     elif st == S_SPLIT_COUNT:
         try:
             count = int(m.text)
@@ -362,6 +378,7 @@ async def text_handler(c, m):
     elif st == S_SPLIT_CUSTOM:
         user_data[uid]['custom_name'] = m.text
         await process_split(c, m, uid, True)
+    
     elif st == S_NAVY_TEXT:
         user_data[uid]['text'] = m.text
         user_data[uid]['state'] = S_NAVY_FILENAME
@@ -375,7 +392,9 @@ async def text_handler(c, m):
             if not l: continue
             if l.replace('+','').isdigit() and len(l)>5:
                 if tn:
-                    vcf+=f"BEGIN:VCARD\nVERSION:3.0\nFN:{tn}\nTEL;TYPE=CELL:{l}\nEND:VCARD\n"
+                    # Plus Sign Magic Here
+                    clean_num = "+" + l.replace('+', '')
+                    vcf+=f"BEGIN:VCARD\nVERSION:3.0\nFN:{tn}\nTEL;TYPE=CELL:{clean_num}\nEND:VCARD\n"
                     tn=None
             else: tn=l
         with open(fname,'w',encoding='utf-8') as f: f.write(vcf)
@@ -384,10 +403,10 @@ async def text_handler(c, m):
         os.remove(fname)
         await reset_user(uid)
 
-# --- PROCESSORS (Fixed Syntax) ---
+# --- PROCESSORS ---
 
 async def process_t2v(c, m, uid, custom):
-    proc_msg = await m.reply("⚙️ **Processing with Sequential Names...**")
+    proc_msg = await m.reply("⚙️ **Processing with Sequential Names & Plus Sign...**")
     try:
         files = user_data[uid]['files']
         c_name_base = user_data[uid]['c_name']
@@ -402,7 +421,9 @@ async def process_t2v(c, m, uid, custom):
             for num in lines:
                 num = num.strip()
                 if num: 
-                    data += f"BEGIN:VCARD\nVERSION:3.0\nFN:{c_name_base} {counter}\nTEL;TYPE=CELL:{num}\nEND:VCARD\n"
+                    # Plus Sign Magic Here
+                    clean_num = "+" + num.replace('+', '')
+                    data += f"BEGIN:VCARD\nVERSION:3.0\nFN:{c_name_base} {counter}\nTEL;TYPE=CELL:{clean_num}\nEND:VCARD\n"
                     counter += 1
             
             with open(out_name, 'w', encoding='utf-8') as f: f.write(data)
@@ -422,7 +443,7 @@ async def process_t2v(c, m, uid, custom):
     await reset_user(uid)
 
 async def process_ren_ctc(c, m, uid, custom):
-    proc_msg = await m.reply("⚙️ **Renaming Contacts (Sequential)...**")
+    proc_msg = await m.reply("⚙️ **Renaming Contacts (Sequential) & Adding Plus Sign...**")
     files = user_data[uid]['files']
     new_c_name_base = user_data[uid]['c_name']
     
@@ -437,6 +458,11 @@ async def process_ren_ctc(c, m, uid, custom):
                     if line.startswith("FN:"):
                         new_content += f"FN:{new_c_name_base} {counter}\n"
                         counter += 1
+                    elif "TEL" in line and ":" in line:
+                        # Plus Sign Magic Here
+                        parts = line.split(":", 1)
+                        clean_num = "+" + parts[1].strip().replace('+', '')
+                        new_content += f"{parts[0]}:{clean_num}\n"
                     else:
                         new_content += line
             
@@ -457,18 +483,30 @@ async def process_ren_ctc(c, m, uid, custom):
     await reset_user(uid)
 
 async def process_split(c, m, uid, custom):
-    proc_msg = await m.reply("⚙️ **Splitting...**")
+    proc_msg = await m.reply("⚙️ **Splitting & Checking Plus Sign...**")
     try:
         path = user_data[uid]['path']
         limit = user_data[uid]['split_count']
         is_vcf = user_data[uid]['is_vcf']
         
+        with open(path, 'r', encoding='utf-8', errors='ignore') as f: content = f.read()
+
         if is_vcf:
-            with open(path, 'r', encoding='utf-8', errors='ignore') as f: content = f.read()
+            # Add Plus Sign to all VCF Numbers
+            content = re.sub(r'(TEL.*?:)\s*\+?(\d+)', r'\1+\2', content)
             items = [x+"END:VCARD\n" for x in content.strip().split("END:VCARD") if "BEGIN:VCARD" in x]
             ext = ".vcf"
         else:
-            with open(path, 'r', encoding='utf-8', errors='ignore') as f: items = f.readlines()
+            # Add Plus Sign to all TXT Numbers
+            raw_items = content.splitlines()
+            items = []
+            for x in raw_items:
+                x = x.strip()
+                if x:
+                    if x.replace('+', '').isdigit():
+                        items.append("+" + x.replace('+', '') + "\n")
+                    else:
+                        items.append(x + "\n")
             ext = ".txt"
 
         total = (len(items)+limit-1)//limit
@@ -492,7 +530,7 @@ async def process_split(c, m, uid, custom):
     await reset_user(uid)
 
 async def process_v2t(c, m, uid, custom):
-    proc_msg = await m.reply("⚙️ **Processing...**")
+    proc_msg = await m.reply("⚙️ **Processing & Adding Plus Sign...**")
     try:
         files = user_data[uid]['files']
         for i, path in enumerate(files):
@@ -500,7 +538,12 @@ async def process_v2t(c, m, uid, custom):
             nums = []
             with open(path, 'r', encoding='utf-8', errors='ignore') as f:
                 for l in f:
-                    if "TEL" in l: nums.append(l.split(':')[-1].strip())
+                    if "TEL" in l: 
+                        raw_num = l.split(':')[-1].strip()
+                        # Plus Sign Magic Here
+                        clean_num = "+" + raw_num.replace('+', '')
+                        nums.append(clean_num)
+            
             with open(out_name, 'w', encoding='utf-8') as f: f.write("\n".join(nums))
             await m.reply_document(out_name)
             
@@ -538,15 +581,27 @@ async def process_rename(c, m, uid, custom):
     await reset_user(uid)
 
 async def process_merge(c, m, uid, custom, ext):
-    proc_msg = await m.reply("⚙️ **Processing Merge...**")
+    proc_msg = await m.reply("⚙️ **Processing Merge & Checking Plus Sign...**")
     files = user_data[uid]['files']
     final_name = f"{user_data[uid].get('custom_name')}{ext}" if custom else f"Merged_Output{ext}"
     try:
         with open(final_name, 'w', encoding='utf-8') as outfile:
             for path in files:
                 with open(path, 'r', encoding='utf-8', errors='ignore') as infile:
-                    outfile.write(infile.read())
-                    if ext == ".txt": outfile.write("\n")
+                    if ext == ".vcf":
+                        content = infile.read()
+                        # Add Plus Sign to VCF Numbers
+                        content = re.sub(r'(TEL.*?:)\s*\+?(\d+)', r'\1+\2', content)
+                        outfile.write(content)
+                    else:
+                        for line in infile:
+                            line = line.strip()
+                            if line:
+                                # Add Plus Sign to TXT Numbers
+                                if line.replace('+', '').isdigit():
+                                    outfile.write("+" + line.replace('+', '') + "\n")
+                                else:
+                                    outfile.write(line + "\n")
                 os.remove(path)
         
         try:
